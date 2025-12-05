@@ -16,8 +16,12 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { CaptureReview } from './components/CaptureReview';
 import { DryRunScreen } from './components/DryRunScreen';
 import { BlockRecordedSuccess } from './components/BlockRecordedSuccess';
+import { TestScenarioSelection } from './components/TestScenarioSelection';
+import { TestErrorRecovery } from './components/TestErrorRecovery';
+import { generateMockScenarios } from './utils/scenarioGenerator';
+import { generateMockError, generateMockSolutions } from './utils/errorRecoveryGenerator';
 
-type Screen = 'landing' | 'wallet-auth' | 'dashboard' | 'ai-architect' | 'plan-review' | 'flow-editor' | 'recording' | 'capture-review' | 'dry-run' | 'block-success' | 'conditional-demo' | 'complex-demo' | 'smart-flow' | 'loop-flow' | 'advanced-loop' | 'interactive-loop';
+type Screen = 'landing' | 'wallet-auth' | 'dashboard' | 'ai-architect' | 'plan-review' | 'flow-editor' | 'recording' | 'capture-review' | 'dry-run' | 'block-success' | 'test-scenario' | 'conditional-demo' | 'complex-demo' | 'smart-flow' | 'loop-flow' | 'advanced-loop' | 'interactive-loop';
 type StepperStep = 'chat' | 'flow' | 'record' | 'test' | 'deploy';
 
 // Mock action blocks
@@ -26,107 +30,71 @@ const mockActionBlocks = [
     id: '1',
     name: 'Connect Wallet',
     goal: 'Connect your MetaMask wallet to the Base network and authorize the application.',
+    nodeType: 'interaction' as const,
     variables: [
-      { key: 'Wallet', value: 'MetaMask', type: 'preset' as const },
-      { key: 'Network', value: 'Base', type: 'preset' as const },
+      { key: 'Connected Address', value: '0x742d...3a9f', type: 'capture' as const },
+      { key: 'Current Balance', value: '1.5 ETH', type: 'capture' as const },
+      { key: 'Gas Price', value: '0.002 ETH', type: 'capture' as const },
     ],
   },
   {
     id: '2',
-    name: 'Select Tokens',
-    goal: 'Choose the tokens you want to swap. Select ETH as input and USDC as output.',
+    name: 'Check Balance',
+    goal: 'Check if balance is sufficient for the swap.',
+    nodeType: 'conditional' as const,
     variables: [
-      { key: 'Input Token', value: 'ETH', type: 'preset' as const },
-      { key: 'Output Token', value: 'USDC', type: 'preset' as const },
-      { key: 'DEX Platform', value: 'Uniswap', type: 'preset' as const },
+      { key: 'Min Balance', value: '0.1 ETH', type: 'preset' as const },
     ],
+    // AI pre-configured paths
+    paths: {
+      yes: {
+        blocks: ['3', '4'], // Monitor Price Loop → Retry Swap
+      },
+      no: {
+        blocks: ['5'], // Send Notification
+      },
+    },
   },
   {
     id: '3',
-    name: 'Calculate Profit',
-    goal: 'Review the exchange rate and calculate if the profit margin meets your threshold.',
-    logic: [
-      {
-        condition: 'Check if net profit margin is greater than or equal to 5%',
-        ifTrue: 'Continue to Step 4 (Execute Swap)',
-        ifFalse: 'Skip to Step 6 (Wait and Retry)',
-      },
-    ],
+    name: 'Monitor Price Loop',
+    goal: 'Monitor price while volatility is low.',
+    nodeType: 'while' as const,
     variables: [
-      { key: 'Amount', value: '0.1 ETH', type: 'preset' as const },
-      { key: 'Slippage', value: '0.5%', type: 'preset' as const },
-      {
-        key: 'current_rate',
-        value: '',
-        type: 'capture' as const,
-        description: 'Current exchange rate from the page',
-      },
-      {
-        key: 'estimated_output',
-        value: '',
-        type: 'capture' as const,
-        description: 'Estimated USDC output shown on screen',
-      },
+      { key: 'Max Volatility', value: '2%', type: 'preset' as const },
     ],
   },
   {
     id: '4',
-    name: 'Execute Swap',
-    goal: 'Confirm and execute the token swap transaction on the blockchain.',
+    name: 'Retry Swap',
+    goal: 'Try to execute swap up to 3 times.',
+    nodeType: 'for' as const,
     variables: [
-      { key: 'Gas Strategy', value: 'Medium', type: 'preset' as const },
-      {
-        key: 'swap_amount',
-        value: '',
-        type: 'from_step' as const,
-        fromStep: 3,
-      },
+      { key: 'Max Attempts', value: '3', type: 'preset' as const },
     ],
   },
   {
     id: '5',
-    name: 'Bridge to Mantle',
-    goal: 'Transfer your USDC from Base to Mantle network using the OKX bridge.',
-    variables: [
-      {
-        key: 'route',
-        value: '',
-        type: 'from_step' as const,
-        fromStep: 4,
-      },
-      { key: 'amount', value: 'amount_to_bridge', type: 'preset' as const },
-      {
-        key: 'bridge_url',
-        value: '',
-        type: 'capture' as const,
-        description: 'Bridge URL from the routing page',
-      },
-      {
-        key: 'source_token_address',
-        value: '',
-        type: 'capture' as const,
-        description: 'Base USDC contract address',
-      },
-      {
-        key: 'target_token_address',
-        value: '',
-        type: 'capture' as const,
-        description: 'Mantle USDC contract address',
-      },
-    ],
+    name: 'Send Notification',
+    goal: 'Alert user on completion.',
+    nodeType: 'interaction' as const,
+    variables: [],
   },
 ];
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('flow-editor');
+  const [currentScreen, setCurrentScreen] = useState<Screen>('recording');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [stepperStep, setStepperStep] = useState<StepperStep>('flow');
+  const [stepperStep, setStepperStep] = useState<StepperStep>('record');
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   
+  // Error recovery state
+  const [showErrorRecovery, setShowErrorRecovery] = useState(false);
+  
   // Recording flow state
-  const [currentBlockIndex, setCurrentBlockIndex] = useState(1);
+  const [currentBlockIndex, setCurrentBlockIndex] = useState(2); // Start at block 2 (Check Balance - conditional)
   const totalBlocks = mockActionBlocks.length;
 
   // Check if user has seen onboarding before
@@ -245,8 +213,36 @@ export default function App() {
 
   const handleFinishAllBlocks = () => {
     // All blocks recorded, navigate to deploy
-    setStepperStep('deploy');
-    console.log('All blocks recorded! Proceeding to deploy...');
+    setStepperStep('test');
+    setCurrentScreen('test-scenario');
+  };
+
+  const handleSelectScenario = (scenarioId: string) => {
+    // Navigate to dry run with selected scenario
+    console.log('Selected scenario:', scenarioId);
+    setCurrentScreen('dry-run');
+  };
+
+  const handleBackFromScenario = () => {
+    // Return to flow editor
+    setCurrentScreen('flow-editor');
+  };
+
+  const handleSelectSolution = (solutionId: string) => {
+    console.log('Selected solution:', solutionId);
+    setShowErrorRecovery(false);
+    
+    // Handle different solution actions
+    if (solutionId === 'retry') {
+      // Retry the test
+      setCurrentScreen('dry-run');
+    } else if (solutionId === 'edit') {
+      // Go back to edit variables
+      setCurrentScreen('capture-review');
+    } else if (solutionId === 'debug') {
+      // View logs (could open a debug screen)
+      console.log('Opening debug logs...');
+    }
   };
 
   const currentBlock = mockActionBlocks[currentBlockIndex - 1];
@@ -297,6 +293,7 @@ export default function App() {
           actionBlock={currentBlock}
           currentIndex={currentBlockIndex}
           totalBlocks={totalBlocks}
+          availableBlocks={mockActionBlocks}
           onBack={() => setCurrentScreen('flow-editor')}
           onComplete={handleStopRecording}
         />
@@ -358,11 +355,28 @@ export default function App() {
           onBack={handleBack}
         />
       )}
+      {currentScreen === 'test-scenario' && (
+        <TestScenarioSelection
+          scenarios={generateMockScenarios()}
+          onSelectScenario={handleSelectScenario}
+          onBack={handleBackFromScenario}
+          onTestError={() => setShowErrorRecovery(true)}
+        />
+      )}
       {showOnboarding && (
         <OnboardingModal
           isOpen={showOnboarding}
           onClose={() => setShowOnboarding(false)}
           onGetStarted={handleStartCapture}
+        />
+      )}
+      {showErrorRecovery && (
+        <TestErrorRecovery
+          isOpen={showErrorRecovery}
+          onClose={() => setShowErrorRecovery(false)}
+          error={generateMockError()}
+          solutions={generateMockSolutions()}
+          onSelectSolution={handleSelectSolution}
         />
       )}
     </div>

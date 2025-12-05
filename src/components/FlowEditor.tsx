@@ -1,11 +1,18 @@
 import { ArrowLeft, ArrowRight } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { ProgressStepper } from './ProgressStepper';
 import { FlowNode } from './FlowNode';
 import { FlowConnector } from './FlowConnector';
+import { FlowConnectorGreen } from './FlowConnectorGreen';
+import { FlowConnectorBlue } from './FlowConnectorBlue';
+import { FlowConnectorPurple } from './FlowConnectorPurple';
 import { FlowMarker } from './FlowMarker';
 import { NodeConfigSheet } from './NodeConfigSheet';
+import { ConditionalNodeV3 } from './ConditionalNodeV3';
+import { LoopNode } from './LoopNode';
+import { ForLoopNode } from './ForLoopNode';
+import { BranchPath } from './BranchPath';
 
 interface FlowEditorProps {
   onBack: () => void;
@@ -20,7 +27,7 @@ type ActionNode = {
   title: string;
   subtitle: string;
   status: 'recorded' | 'pending';
-  nodeType?: 'interaction' | 'conditional';
+  nodeType?: 'interaction' | 'conditional' | 'while' | 'for';
   conditionalType?: 'ifelse' | 'while' | 'for';
 };
 
@@ -67,6 +74,7 @@ export function FlowEditor({ onBack, onNext, stepperStep }: FlowEditorProps) {
   const [nodes, setNodes] = useState<ActionNode[]>(mockActionNodes);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isConfigSheetOpen, setIsConfigSheetOpen] = useState(false);
+  const [currentPath, setCurrentPath] = useState<'yes' | 'no'>('yes');
 
   // Scroll to top on mount
   useEffect(() => {
@@ -172,34 +180,178 @@ export function FlowEditor({ onBack, onNext, stepperStep }: FlowEditorProps) {
               <FlowMarker type="start" />
             </motion.div>
 
-            {/* Connector after start */}
-            <FlowConnector onAddNode={() => handleAddNode('start')} />
+            <FlowConnector />
 
-            {/* Action Nodes */}
-            <motion.div variants={containerVariants} initial="hidden" animate="visible">
-              {nodes.map((node, index) => (
-                <motion.div key={node.id} variants={itemVariants}>
+            {/* Action 1: Connect Wallet */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+            >
+              <FlowNode
+                id="1"
+                type="action"
+                icon="wallet"
+                title="Connect Wallet"
+                subtitle="Connect to Base network"
+                status="recorded"
+                onClick={() => handleNodeClick('1')}
+              />
+            </motion.div>
+
+            <FlowConnector />
+
+            {/* Action 2: If/Else - Check Balance */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentPath}
+                initial={{ opacity: 0, x: currentPath === 'yes' ? 0 : -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: currentPath === 'yes' ? 0 : 20 }}
+                transition={{ duration: 0.3 }}
+                className="px-4"
+              >
+                <ConditionalNodeV3
+                  id="2"
+                  condition="Check if balance > 0.1 ETH"
+                  status="recorded"
+                  currentPath={currentPath}
+                  onSwitchToNo={() => setCurrentPath('no')}
+                  onSwitchToYes={() => setCurrentPath('yes')}
+                  onClick={() => handleNodeClick('2')}
+                />
+              </motion.div>
+            </AnimatePresence>
+
+            <AnimatePresence mode="wait">
+              {currentPath === 'yes' ? (
+                /* YES PATH - Main flow */
+                <motion.div
+                  key="yes-path"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <FlowConnectorGreen />
+
+                  {/* Action 3: While Loop - Monitor Price */}
+                  <div className="px-4 mb-6">
+                    <LoopNode
+                      id="3"
+                      condition="While price is stable (volatility &lt; 2%)"
+                      status="recorded"
+                      onClick={() => handleNodeClick('3')}
+                    >
+                      <FlowNode
+                        id="3a"
+                        type="action"
+                        icon="trend"
+                        title="Monitor Price"
+                        subtitle="Check every 10 minutes"
+                        status="recorded"
+                      />
+                      <FlowConnectorBlue />
+                      <FlowNode
+                        id="3b"
+                        type="action"
+                        icon="swap"
+                        title="Update Position"
+                        subtitle="Adjust liquidity if needed"
+                        status="recorded"
+                      />
+                    </LoopNode>
+                  </div>
+
+                  <FlowConnector />
+
+                  {/* Action 4: For Loop - Retry Swap */}
+                  <div className="px-4 mb-6">
+                    <ForLoopNode
+                      id="4"
+                      iterations={3}
+                      status="pending"
+                      onClick={() => handleNodeClick('4')}
+                    >
+                      <FlowNode
+                        id="4a"
+                        type="action"
+                        icon="swap"
+                        title="Execute Swap"
+                        subtitle="Try to swap ETH to USDC"
+                        status="pending"
+                      />
+                      <FlowConnectorPurple />
+                      <FlowNode
+                        id="4b"
+                        type="action"
+                        icon="alert"
+                        title="Wait & Adjust Gas"
+                        subtitle="Increase gas if failed"
+                        status="pending"
+                      />
+                    </ForLoopNode>
+                  </div>
+
+                  <FlowConnector />
+
+                  {/* Action 5: Final Action */}
                   <FlowNode
-                    id={node.id}
+                    id="5"
                     type="action"
-                    icon={node.icon}
-                    title={node.title}
-                    subtitle={node.subtitle}
-                    status={node.status}
-                    onClick={() => handleNodeClick(node.id)}
+                    icon="alert"
+                    title="Send Notification"
+                    subtitle="Alert user on completion"
+                    status="pending"
+                    onClick={() => handleNodeClick('5')}
+                  />
+                </motion.div>
+              ) : (
+                /* NO PATH - Alternative flow with 2 steps */
+                <motion.div
+                  key="no-path"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="ml-4"
+                >
+                  <BranchPath direction="left" />
+
+                  {/* No Path Step 1 */}
+                  <FlowNode
+                    id="no-1"
+                    type="action"
+                    icon="alert"
+                    title="Request Deposit"
+                    subtitle="Prompt user to add more funds"
+                    status="pending"
+                    onClick={() => handleNodeClick('no-1')}
                   />
 
-                  {/* Connector between nodes */}
-                  <FlowConnector onAddNode={() => handleAddNode(node.id)} />
+                  <FlowConnector />
+
+                  {/* No Path Step 2 */}
+                  <FlowNode
+                    id="no-2"
+                    type="action"
+                    icon="wallet"
+                    title="Wait for Deposit"
+                    subtitle="Monitor wallet balance"
+                    status="pending"
+                    onClick={() => handleNodeClick('no-2')}
+                  />
+
+                  <div className="h-8" />
                 </motion.div>
-              ))}
-            </motion.div>
+              )}
+            </AnimatePresence>
+
+            <FlowConnector />
 
             {/* End Marker */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: (nodes.length + 1) * 0.1 }}
+              transition={{ delay: 0.8 }}
             >
               <FlowMarker type="end" />
             </motion.div>
